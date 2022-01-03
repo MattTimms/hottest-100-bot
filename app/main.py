@@ -1,9 +1,18 @@
 import string
 import random
+from collections import namedtuple
+from typing import List
 
 import names
 import pandas as pd
 from playwright.sync_api import sync_playwright, Page
+from pydantic import BaseModel
+
+Song = namedtuple("Song", ['artist', 'track'])
+target_songs = [Song(*x) for x in [
+    'Billie Eilish', 'Getting Older'
+]]
+
 
 class Tempmailo:
     url = "https://tempmailo.com/"
@@ -12,28 +21,20 @@ class Tempmailo:
         self.page = page
         self.page.goto("https://tempmailo.com/")
         self.email = self.page.eval_on_selector("input[type=\"text\"]", "el => el.value")
+        self._is_verified = False
 
+    def verify_email(self) -> bool:
+        if self._is_verified:
+            return self._is_verified
 
-
-def get_email(browser: Browser) -> str:
-    page = browser.new_page()
-    page.goto("https://tempmailo.com/")
-    email = page.eval_on_selector("input[type=\"text\"]", "el => el.value")
-    return email
-
-def verify_email(browser: Browser) -> bool:
-    page1.click("text=ABC <abc@accounts.abc.net.au>")
-    # Click text=VERIFY EMAIL
-    # with page1.expect_navigation(url="https://hottest100.abc.net.au/authenticate"):
-    with page1.expect_navigation():
-        with page1.expect_popup() as popup_info:
-            page1.frame(name="fullmessage").click("text=VERIFY EMAIL")
-        page2 = popup_info.value
-
-    # Go to https://hottest100.abc.net.au/browse
-    page2.goto("https://hottest100.abc.net.au/browse")
-    # Go to https://hottest100.abc.net.au/browse/artist/a
-    page2.goto("https://hottest100.abc.net.au/browse/artist/a")
+        self.page.click("text=ABC <abc@accounts.abc.net.au>")
+        # Click text=VERIFY EMAIL
+        # with page1.expect_navigation(url="https://hottest100.abc.net.au/authenticate"):
+        with self.page.expect_navigation():
+            with self.page.expect_popup() as popup_info:
+                self.page.frame(name="fullmessage").click("text=VERIFY EMAIL")
+            page2: Page = popup_info.value
+        page2.close()
 
 
 def generate_password() -> str:
@@ -50,7 +51,26 @@ def get_postcode() -> int:
     return int(df.sample().Zip.values)
 
 
-def create_account():
+class SessionResults(BaseModel):
+    email: str
+    password: str
+    name: str
+    gender: str
+    dob: int
+    postcode: int
+    votes: List[Song]
+
+
+def test_playwright():
+    with sync_playwright() as p:
+        browser = p.firefox.launch(headless=False)
+
+        page = browser.new_page()
+
+        page.goto("https://mylogin.abc.net.au/account/index.html#/signup")
+
+
+def vote() -> SessionResults:
     with sync_playwright() as p:
         browser = p.firefox.launch(headless=False)
 
@@ -59,7 +79,8 @@ def create_account():
         page.goto("https://mylogin.abc.net.au/account/index.html#/signup")
         page.click("[data-testid=\"signup-with-email-btn\"]")
 
-        email = get_email(browser)
+        email_client = Tempmailo(page=browser.new_page())
+        email = email_client.email
         password = generate_password()
 
         page.fill("[data-testid=\"email-field\"]", email)
@@ -78,7 +99,7 @@ def create_account():
 
         gender = random.choice(['Male', 'Female', 'Prefer not to say'])
         name = names.get_first_name(gender=gender.lower())
-        dob = random.randint(2021-30, 2021-18)
+        dob = random.randint(2021 - 30, 2021 - 18)
         postcode = get_postcode()
 
         page.fill("[data-testid=\"first-name-field\"]", name)
@@ -98,10 +119,26 @@ def create_account():
         with page.expect_navigation():
             page.click("[data-testid=\"create-account-btn\"]")
 
+        email_client.verify_email()
 
+        page.goto("https://www.abc.net.au/triplej/hottest100/21/")
+        with page.expect_navigation():
+            page.click("text=Vote Now")
+        page.click("text=Search")
 
+        for song in target_songs:
+            page.fill("[placeholder=\"Enter the artist's name\"]", song.artist)
+            page.fill("[placeholder=\"Enter the track title\"]", song.track)
+            page.click(f"[aria-label=\"Add {song.track} by {song.artist} to your shortlist\"]")
 
+        page.click("text=Submit Votes")
+
+    results = SessionResults(email=email, password=password,
+                             name=name, gender=gender, dob=dob, postcode=postcode,
+                             votes=target_songs)
+    print(results.json())
+    return results
 
 
 if __name__ == '__main__':
-    create_account()
+    vote()
