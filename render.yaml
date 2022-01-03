@@ -1,0 +1,9 @@
+services:
+  # A Docker web service
+  - type: web
+    name: hottest100
+    env: docker
+    plan: free
+    branch: main
+#    dockerCommand: ./webdis.sh # optional (defaults to Dockerfile command)
+    healthCheckPath: /

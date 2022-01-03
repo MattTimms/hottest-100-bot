@@ -1,16 +1,19 @@
-import string
+import os
+import re
 import random
+import string
 from collections import namedtuple
 from typing import List
 
 import names
 import pandas as pd
+from loguru import logger
 from playwright.sync_api import sync_playwright, Page
 from pydantic import BaseModel
 
 Song = namedtuple("Song", ['artist', 'track'])
 target_songs = [Song(*x) for x in [
-    'Billie Eilish', 'Getting Older'
+    ('Billie Eilish', 'Getting Older'),  # defaults to #1 track in vote
 ]]
 
 
@@ -21,33 +24,38 @@ class Tempmailo:
         self.page = page
         self.page.goto("https://tempmailo.com/")
         self.email = self.page.eval_on_selector("input[type=\"text\"]", "el => el.value")
-        self._is_verified = False
 
-    def verify_email(self) -> bool:
-        if self._is_verified:
-            return self._is_verified
+    def verify_email(self) -> Page:
+        self.page.wait_for_timeout(5000)
+        self.page.click("button:has-text(\"Refresh\")")
+        self.page.click("text=Please complete your sign up")
 
-        self.page.click("text=ABC <abc@accounts.abc.net.au>")
-        # Click text=VERIFY EMAIL
-        # with page1.expect_navigation(url="https://hottest100.abc.net.au/authenticate"):
-        with self.page.expect_navigation():
-            with self.page.expect_popup() as popup_info:
-                self.page.frame(name="fullmessage").click("text=VERIFY EMAIL")
-            page2: Page = popup_info.value
-        page2.close()
+        with self.page.expect_popup() as popup_info:
+            self.page.frame(name="fullmessage").click("text=VERIFY EMAIL")
+
+        self.page.click("text=Welcome to your new ABC Account")
+        with self.page.expect_popup() as popup_info:
+            self.page.frame(name="fullmessage").click("text=LOG IN TO YOUR ACCOUNT")
+        new_page = popup_info.value
+        # new_page.click("text=Continue to abc.net.au")
+        # new_page.click("[data-testid=\"continue-to-abc-btn\"]")
+        return new_page
 
 
 def generate_password() -> str:
     # pw 6-50 chars, number, upper, & lower
-    # re.compile(r'(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d]{6,50}')
+    pattern = re.compile(r'(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d]{6,50}')
 
+    password = ''
     length = random.randint(6, 50)
-    password = ''.join(random.choices(string.ascii_uppercase + string.ascii_lowercase + string.digits, k=length))
+    while pattern.match(password) is None:
+        password = ''.join(random.choices(string.ascii_uppercase + string.ascii_lowercase + string.digits, k=length))
     return password
 
 
 def get_postcode() -> int:
-    df = pd.read_csv('australian-postcodes-2021-04-23.csv')
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    df = pd.read_csv(os.path.join(dir_path, 'australian-postcodes-2021-04-23.csv'))
     return int(df.sample().Zip.values)
 
 
@@ -63,16 +71,16 @@ class SessionResults(BaseModel):
 
 def test_playwright():
     with sync_playwright() as p:
-        browser = p.firefox.launch(headless=False)
+        browser = p.firefox.launch(headless=True)
 
         page = browser.new_page()
 
         page.goto("https://mylogin.abc.net.au/account/index.html#/signup")
 
 
-def vote() -> SessionResults:
+def vote(headless=True) -> SessionResults:
     with sync_playwright() as p:
-        browser = p.firefox.launch(headless=False)
+        browser = p.firefox.launch(headless=headless)
 
         page = browser.new_page()
 
@@ -99,6 +107,7 @@ def vote() -> SessionResults:
 
         gender = random.choice(['Male', 'Female', 'Prefer not to say'])
         name = names.get_first_name(gender=gender.lower())
+        surname = names.get_last_name()
         dob = random.randint(2021 - 30, 2021 - 18)
         postcode = get_postcode()
 
@@ -119,26 +128,36 @@ def vote() -> SessionResults:
         with page.expect_navigation():
             page.click("[data-testid=\"create-account-btn\"]")
 
-        email_client.verify_email()
+        new_page = email_client.verify_email()
 
-        page.goto("https://www.abc.net.au/triplej/hottest100/21/")
-        with page.expect_navigation():
-            page.click("text=Vote Now")
-        page.click("text=Search")
+        new_page.goto("https://www.abc.net.au/triplej/hottest100/21/")
+        with new_page.expect_navigation():
+            new_page.click("text=Vote Now")
+        new_page.click("text=Search")
 
         for song in target_songs:
-            page.fill("[placeholder=\"Enter the artist's name\"]", song.artist)
-            page.fill("[placeholder=\"Enter the track title\"]", song.track)
-            page.click(f"[aria-label=\"Add {song.track} by {song.artist} to your shortlist\"]")
+            new_page.fill("[placeholder=\"Enter the artist's name\"]", song.artist)
+            new_page.fill("[placeholder=\"Enter the track title\"]", song.track)
+            new_page.click(f"[aria-label=\"Add {song.track} by {song.artist} to your shortlist\"]")
 
-        page.click("text=Submit Votes")
+        new_page.click("text=Submit Votes")
+        new_page.fill("text=Last nameYour last name is required >> input[type=\"text\"]", surname)
+        new_page.fill("text=Phone numberYour phone number is required >> input[type=\"text\"]", phone_no)
+        new_page.check("text=Can we call you to chat on-air? (Required for competition entry)Yes >> input[type=\"checkbox\"]")
+        # new_page.query_selector("#recaptcha-element").click("span[role=\"checkbox\"]", button="right")
+        with new_page.expect_navigation():
+            new_page.click("text=Complete Voting")
+
+        print(1)
+
+        # FIXME lots more todo
 
     results = SessionResults(email=email, password=password,
                              name=name, gender=gender, dob=dob, postcode=postcode,
                              votes=target_songs)
-    print(results.json())
+    logger.info(results.json())
     return results
 
 
 if __name__ == '__main__':
-    vote()
+    vote(headless=False)
