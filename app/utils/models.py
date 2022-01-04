@@ -77,3 +77,4 @@ class SessionResults(Account):
     class Config:
         arbitrary_types_allowed = True
         json_encoders = {arrow.Arrow: lambda x: x.for_json()}
+

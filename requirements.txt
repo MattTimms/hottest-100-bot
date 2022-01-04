@@ -8,4 +8,5 @@ uvicorn[standard]==0.16.0
 loguru==0.5.3
 requests==2.26.0
 arrow==1.2.1
-databases[postgresql]==0.5.3
+sqlalchemy==1.4.29
+psycopg2==2.9.3
