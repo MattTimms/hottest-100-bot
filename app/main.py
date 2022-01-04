@@ -92,6 +92,8 @@ def vote(headless=True) -> SessionResults:
         new_page.fill("text=Phone numberYour phone number is required >> input[type=\"text\"]", account.phone)
         new_page.check("text=Can we call you to chat on-air? (Required for competition entry)Yes >> input[type=\"checkbox\"]")
         new_page.query_selector("#recaptcha-element").query_selector('iframe').click()
+
+        new_page.wait_for_timeout(3000)
         with new_page.expect_navigation():
             new_page.click("text=Complete Voting")
 

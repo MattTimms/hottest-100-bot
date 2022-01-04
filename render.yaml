@@ -15,11 +15,11 @@ services:
 
 databases:
   - name: db
-      databaseName: db # optional (Render may add a suffix)
-      user: postgres
-      plan: free
-      ipAllowList: # optional (defaults to allow all)
-#        - source: 203.0.113.4/30
-#          description: office
-        - source: 110.147.154.143
-          description: home
+    databaseName: hottest100  # optional (Render may add a suffix)
+    user: bot
+    plan: free
+    ipAllowList: # optional (defaults to allow all)
+#     - source: 203.0.113.4/30
+#       description: office
+      - source: 110.147.154.143
+        description: home
