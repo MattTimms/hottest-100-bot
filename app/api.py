@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
 from app.main import vote, test_playwright
-from app.logger import configure_logging
+from app.utils.logger import configure_logging
 
 configure_logging()
 app = FastAPI()
