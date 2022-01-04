@@ -3,18 +3,27 @@ import re
 import random
 import string
 from collections import namedtuple
-from typing import List
+from typing import List, Optional
 
+import arrow
 import names
 import pandas as pd
+import requests
+from databases import Database
 from loguru import logger
 from playwright.sync_api import sync_playwright, Page
-from pydantic import BaseModel
+from pydantic import BaseModel, IPvAnyAddress
 
 Song = namedtuple("Song", ['artist', 'track'])
 target_songs = [Song(*x) for x in [
     ('Billie Eilish', 'Getting Older'),  # defaults to #1 track in vote
 ]]
+
+database: Optional[Database] = None
+if (DB_URL := os.getenv('DB_URL')) is not None:
+    logger.info(DB_URL)
+    database = Database(DB_URL)
+    database.connect()
 
 
 class Tempmailo:
@@ -33,12 +42,12 @@ class Tempmailo:
         with self.page.expect_popup() as popup_info:
             self.page.frame(name="fullmessage").click("text=VERIFY EMAIL")
 
-        self.page.click("text=Welcome to your new ABC Account")
+        self.page.wait_for_timeout(5000)
+        self.page.click("button:has-text(\"Refresh\")")
+        self.page.click("text=Welcome to your new ABC Account", timeout=60_000)
         with self.page.expect_popup() as popup_info:
             self.page.frame(name="fullmessage").click("text=LOG IN TO YOUR ACCOUNT")
         new_page = popup_info.value
-        # new_page.click("text=Continue to abc.net.au")
-        # new_page.click("[data-testid=\"continue-to-abc-btn\"]")
         return new_page
 
 
@@ -59,14 +68,52 @@ def get_postcode() -> int:
     return int(df.sample().Zip.values)
 
 
-class SessionResults(BaseModel):
+def get_ip() -> str:
+    resp = requests.get('https://api.ipify.org?format=json')
+    return resp.json().get('ip')
+
+
+def get_phone_no() -> str:
+    phone = "04## ### ###"
+    n = phone.count('#')
+    for _ in range(n):
+        phone = phone.replace('#', str(random.randint(0, 9)), 1)
+    return phone
+
+
+class Account(BaseModel):
     email: str
     password: str
-    name: str
+    firstname: str
+    surname: str
     gender: str
     dob: int
     postcode: int
+    phone: str
+
+    @classmethod
+    def generate(cls, email: str) -> 'Account':
+        gender = random.choice(['Male', 'Female', 'Prefer not to say'])
+        return cls(
+            email=email,
+            password=generate_password(),
+            firstname=names.get_first_name(gender=gender.lower()),
+            surname=names.get_last_name(),
+            gender=gender,
+            dob=random.randint(2021 - 30, 2021 - 18),
+            postcode=get_postcode(),
+            phone=get_phone_no(),
+        )
+
+
+class SessionResults(Account):
     votes: List[Song]
+    created_at: arrow.Arrow = arrow.now()
+    src_addr: IPvAnyAddress = get_ip()
+
+    class Config:
+        arbitrary_types_allowed = True
+        json_encoders = {arrow.Arrow: lambda x: x.for_json()}
 
 
 def test_playwright():
@@ -88,11 +135,11 @@ def vote(headless=True) -> SessionResults:
         page.click("[data-testid=\"signup-with-email-btn\"]")
 
         email_client = Tempmailo(page=browser.new_page())
-        email = email_client.email
-        password = generate_password()
+        account = Account.generate(email=email_client.email)
+        logger.info(f"account={account.json()}")
 
-        page.fill("[data-testid=\"email-field\"]", email)
-        page.fill("[data-testid=\"password-field\"]", password)
+        page.fill("[data-testid=\"email-field\"]", account.email)
+        page.fill("[data-testid=\"password-field\"]", account.password)
 
         is_valid_email = page.query_selector("#email-error") is None
         is_valid_pass = page.query_selector("#password-error") is None
@@ -100,24 +147,18 @@ def vote(headless=True) -> SessionResults:
         if not (is_valid_email and is_valid_pass):
             raise ValueError("email or pass was bad")
 
-        print(1)
-
         with page.expect_navigation():
             page.click("[data-testid=\"signup-with-email-btn\"]")
 
-        gender = random.choice(['Male', 'Female', 'Prefer not to say'])
-        name = names.get_first_name(gender=gender.lower())
-        surname = names.get_last_name()
-        dob = random.randint(2021 - 30, 2021 - 18)
-        postcode = get_postcode()
+        logger.info("Sign-up page 1 - complete")
 
-        page.fill("[data-testid=\"first-name-field\"]", name)
-        page.fill("[data-testid=\"year-of-birth-field\"]", str(dob))
+        page.fill("[data-testid=\"first-name-field\"]", account.firstname)
+        page.fill("[data-testid=\"year-of-birth-field\"]", str(account.dob))
 
         page.click("text=Select gender identity")
-        page.click(f"text={gender}")
+        page.click(f"text={account.gender}")
 
-        page.fill("[placeholder=\"Enter suburb or postcode\"]", str(postcode))
+        page.fill("[placeholder=\"Enter suburb or postcode\"]", str(account.postcode))
         page.click("#screen-location-field-menu > ul > li:nth-child(1)")
 
         # t's & c's
@@ -128,7 +169,10 @@ def vote(headless=True) -> SessionResults:
         with page.expect_navigation():
             page.click("[data-testid=\"create-account-btn\"]")
 
+        logger.info("Sign-up page 2 - complete")
+
         new_page = email_client.verify_email()
+        logger.info("Email verified")
 
         new_page.goto("https://www.abc.net.au/triplej/hottest100/21/")
         with new_page.expect_navigation():
@@ -141,20 +185,16 @@ def vote(headless=True) -> SessionResults:
             new_page.click(f"[aria-label=\"Add {song.track} by {song.artist} to your shortlist\"]")
 
         new_page.click("text=Submit Votes")
-        new_page.fill("text=Last nameYour last name is required >> input[type=\"text\"]", surname)
-        new_page.fill("text=Phone numberYour phone number is required >> input[type=\"text\"]", phone_no)
+        new_page.fill("text=Last nameYour last name is required >> input[type=\"text\"]", account.surname)
+        new_page.fill("text=Phone numberYour phone number is required >> input[type=\"text\"]", account.phone)
         new_page.check("text=Can we call you to chat on-air? (Required for competition entry)Yes >> input[type=\"checkbox\"]")
-        # new_page.query_selector("#recaptcha-element").click("span[role=\"checkbox\"]", button="right")
+        new_page.query_selector("#recaptcha-element").query_selector('iframe').click()
         with new_page.expect_navigation():
             new_page.click("text=Complete Voting")
 
-        print(1)
+        logger.info("Vote complete")
 
-        # FIXME lots more todo
-
-    results = SessionResults(email=email, password=password,
-                             name=name, gender=gender, dob=dob, postcode=postcode,
-                             votes=target_songs)
+    results = SessionResults(**account.dict(), votes=target_songs)
     logger.info(results.json())
     return results
 
