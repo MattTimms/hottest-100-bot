@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from .schema import Base
 
 DB_URL = os.getenv('DB_URL')
+DB_URL = DB_URL.replace('postgres://', 'postgresql://')
 logger.info(f"{DB_URL=}")
 
 

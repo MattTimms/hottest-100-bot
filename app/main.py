@@ -1,7 +1,4 @@
-import os
-from typing import Optional
 
-from databases import Database
 from loguru import logger
 from playwright.sync_api import sync_playwright
 
@@ -9,14 +6,8 @@ from app.utils.email import Tempmailo
 from app.utils.models import Song, Account, SessionResults
 
 target_songs = [Song(*x) for x in [
-    ('Billie Eilish', 'Getting Older'),  # defaults to #1 track in vote
+    ('Gang Of Youths', 'the angel of 8th ave.'),  # defaults to #1 track in vote
 ]]
-
-database: Optional[Database] = None
-if (DB_URL := os.getenv('DB_URL')) is not None:
-    logger.info(DB_URL)
-    database = Database(DB_URL)
-    database.connect()
 
 
 def test_playwright():
@@ -30,7 +21,7 @@ def test_playwright():
 
 def vote(headless=True) -> SessionResults:
     with sync_playwright() as p:
-        browser = p.firefox.launch(headless=headless)
+        browser = p.firefox.launch(headless=headless)  #, proxy={'server': '149.19.224.36:3128'})
 
         page = browser.new_page()
 
