@@ -5,21 +5,20 @@ services:
     env: docker
     plan: free
     branch: main
-#    dockerCommand: ./webdis.sh # optional (defaults to Dockerfile command)
     healthCheckPath: /
-    envVars:
-      - key: DB_URL
-        fromDatabase:
-          name: db
-          property: connectionString
+#    envVars:
+#      - key: DB_URL
+#        fromDatabase:
+#          name: db
+#          property: connectionString
 
-databases:
-  - name: db
-    databaseName: hottest100  # optional (Render may add a suffix)
-    user: bot
-    plan: free
-    ipAllowList: # optional (defaults to allow all)
-#     - source: 203.0.113.4/30
-#       description: office
-      - source: 110.147.154.143
-        description: home
+#databases:
+#  - name: db
+#    databaseName: hottest100  # optional (Render may add a suffix)
+#    user: bot
+#    plan: free
+#    ipAllowList: # optional (defaults to allow all)
+##     - source: 203.0.113.4/30
+##       description: office
+#      - source: 110.147.154.143
+#        description: home

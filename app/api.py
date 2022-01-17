@@ -1,16 +1,29 @@
-from typing import Optional
+from typing import Optional, Iterator
 
 from fastapi import FastAPI, Depends, HTTPException
+from playwright.sync_api import sync_playwright
 from sqlalchemy.orm import Session
 
 from app import main
-from app.db.database import get_db
+from app.db.database import SessionLocal
 from app.db.schema import Votes
 from app.utils.models import SessionResults
 from app.utils.logger import configure_logging
 
 configure_logging()
 app = FastAPI()
+
+
+# Dependency
+def get_db() -> Iterator[Optional[Session]]:
+    if SessionLocal is not None:
+        db = SessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+    else:
+        yield None
 
 
 @app.get("/")
@@ -30,7 +43,12 @@ def vote(db: Optional[Session] = Depends(get_db)):
 
 @app.get("/test-playwright")
 def _test_playwright():
-    main.test_playwright()
+    """ Test endpoint to ensure deployment can use playwright correctly. """
+    with sync_playwright() as p:
+        browser = p.firefox.launch(headless=True)
+        page = browser.new_page()
+        page.goto("https://mylogin.abc.net.au/account/index.html#/signup")
+
     return {"message": "test passed"}
 
 

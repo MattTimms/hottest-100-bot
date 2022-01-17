@@ -1,4 +1,3 @@
-
 from loguru import logger
 from playwright.sync_api import sync_playwright
 
@@ -10,25 +9,17 @@ target_songs = [Song(*x) for x in [
 ]]
 
 
-def test_playwright():
-    with sync_playwright() as p:
-        browser = p.firefox.launch(headless=True)
-
-        page = browser.new_page()
-
-        page.goto("https://mylogin.abc.net.au/account/index.html#/signup")
-
-
 def vote(headless=True) -> SessionResults:
     with sync_playwright() as p:
-        browser = p.firefox.launch(headless=headless)  #, proxy={'server': '149.19.224.36:3128'})
+        browser = p.firefox.launch(headless=headless)
 
-        page = browser.new_page()
+        context = browser.new_context(record_video_dir='./recordings')
+        page = context.new_page()
 
         page.goto("https://mylogin.abc.net.au/account/index.html#/signup")
         page.click("[data-testid=\"signup-with-email-btn\"]")
 
-        email_client = Tempmailo(page=browser.new_page())
+        email_client = Tempmailo(page=context.new_page())
         account = Account.generate(email=email_client.email)
         logger.info(f"account={account.json()}")
 
@@ -81,7 +72,8 @@ def vote(headless=True) -> SessionResults:
         new_page.click("text=Submit Votes")
         new_page.fill("text=Last nameYour last name is required >> input[type=\"text\"]", account.surname)
         new_page.fill("text=Phone numberYour phone number is required >> input[type=\"text\"]", account.phone)
-        new_page.check("text=Can we call you to chat on-air? (Required for competition entry)Yes >> input[type=\"checkbox\"]")
+        new_page.check(
+            "text=Can we call you to chat on-air? (Required for competition entry)Yes >> input[type=\"checkbox\"]")
         new_page.query_selector("#recaptcha-element").query_selector('iframe').click()
 
         new_page.wait_for_timeout(3000)
